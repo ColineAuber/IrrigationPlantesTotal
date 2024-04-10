@@ -8,6 +8,10 @@
 // Définition du type de capteur utilisé
 #define DHTTYPE DHT11
 
+#define POMPE_DUTY_CYCLE 1000
+#define POMPE_PERIODE 10000
+
+
 // Paramètres WiFi
 const char* ssid = "Pixel Coline";           // Remplacez par le nom de votre réseau WiFi
 const char* password = "Raclette";           // Remplacez par le mot de passe de votre réseau WiFi
@@ -26,6 +30,8 @@ const char* mqttB = "colineauber@yahoo.fr/bouton"; // Topic MQTT pour les alerte
 // Broche pour le relais de la pompe
 const int relais_pompe = D2; // // le relais est connecté à la broche 2 de la carte Adruino
 
+bool needWater_pre = 0;
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -36,6 +42,11 @@ int temp = 20; // Valeur par défaut pour la température
 int boutonEtat = 0;
 
 int time_1s = 0;
+int pompeActiveTime = 0;
+
+bool alerte;
+bool pompeActive = 0;
+bool needWater = 0;
 
 void callback(char* topic, byte* payload, unsigned int length) {
   // Traitement des messages MQTT entrants
@@ -166,8 +177,6 @@ void loop() {
   Serial.println(boutonEtat);
   }
 
-  bool alerte;
-
   // Détermination de l'alerte en fonction de la température
   if(temp > 32 || temp <= 0){
     alerte = true;
@@ -187,14 +196,57 @@ void loop() {
     String message = "Alerte! Le taux d'humidité est trop élevé, il est actuellement à : " + String(percentageHumidity) + "%";
     client.publish(mqttA, message.c_str());
   }
+  /*
 
-  if(percentageHumidity <= 30 && alerte == false || boutonEtat == 1){
-    digitalWrite(relais_pompe, HIGH);
-    delay(1000); //1s
-    digitalWrite(relais_pompe, LOW);
-    boutonEtat = 0;
+  if (millis() - time_10s > 10000){
+    if(percentageHumidity <= 30 && alerte == false || boutonEtat == 1){
+      digitalWrite(relais_pompe, HIGH);
+      delay(1000); //1s
+      digitalWrite(relais_pompe, LOW);
+      boutonEtat = 0;
+      time_10s = millis();
+    }else {
+      time_10s = millis();
+    }
+  }
+  */
+
+  if (percentageHumidity <= 30 && alerte == false || boutonEtat == 1) {
+    needWater = 1;
+  } else {
+    needWater = 0;
   }
 
+  if (needWater) {
+    if (needWater != needWater_pre) {
+      Serial.println("La plante a besoin d'eau");
+      digitalWrite(relais_pompe, HIGH);
+      pompeActiveTime = millis();
+      pompeActive = 1;
+    }
+
+    if (pompeActive) {
+      if (millis() - pompeActiveTime > POMPE_DUTY_CYCLE) {
+        Serial.println("Boucle 3");
+        digitalWrite(relais_pompe, LOW);
+        pompeActive = 0;
+      }
+    } else {
+      if (millis() - pompeActiveTime > POMPE_PERIODE) {
+        Serial.println("Boucle 5");
+        digitalWrite(relais_pompe, HIGH);
+        pompeActiveTime = millis();
+        pompeActive = 1;
+      }
+    }
+  } else {
+    if (needWater != needWater_pre) {
+      Serial.println("La plante n'a pas besoin d'eau");
+      digitalWrite(relais_pompe, LOW);
+      pompeActive = 0;
+    }
+  }
+  needWater_pre = needWater;
   delay(10);
 }
 
